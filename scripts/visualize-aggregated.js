@@ -191,50 +191,66 @@ function generateHtmlReport(aggregatedData) {
     contextSizeAverages[size] = metrics;
   }
   
-  // Extract unique models and content types from all configs
+  // Extract unique models, content types, and search strategies from all configs
   const allLLMModels = new Set();
   const allEmbeddingModels = new Set();
   const allContentTypes = new Set();
+  const allSearchStrategies = new Set();
   
   configs.forEach(config => {
     if (config.llmModels) config.llmModels.forEach(model => allLLMModels.add(model));
     if (config.embeddingModels) config.embeddingModels.forEach(model => allEmbeddingModels.add(model));
     if (config.contentTypes) config.contentTypes.forEach(type => allContentTypes.add(type));
+    if (config.searchStrategies) config.searchStrategies.forEach(strategy => allSearchStrategies.add(strategy));
   });
+  
+  // Add any search strategies found in results that might not be in configs
+  successfulResults.forEach(result => {
+    if (result.search_strategy) allSearchStrategies.add(result.search_strategy);
+  });
+  
+  // If no search strategies were found, add a default one
+  if (allSearchStrategies.size === 0) {
+    allSearchStrategies.add('vector-search');
+  }
   
   // Calculate combination averages
   const combinationResults = [];
   
-  for (const llmModel of allLLMModels) {
-    for (const embeddingModel of allEmbeddingModels) {
-      for (const contentType of allContentTypes) {
-        const combinationKey = `${llmModel}-${embeddingModel}-${contentType}`;
-        const combinationData = successfulResults.filter(
-          r => r.llm_model === llmModel && 
-               r.embedding_model === embeddingModel && 
-               r.content_type === contentType
-        );
-        
-        if (combinationData.length > 0) {
-          const avgMetrics = {
-            totalTime: average(combinationData.map(r => r.metrics.totalTime)),
-            llmResponseTime: average(combinationData.map(r => r.metrics.llmResponseTime)),
-            vectorSearchTime: average(combinationData.map(r => r.metrics.vectorSearchTime)),
-            embeddingTime: average(combinationData.map(r => r.metrics.embeddingTime)),
-            totalCost: average(combinationData.map(r => r.metrics.totalCost)),
-            llmCost: average(combinationData.map(r => r.metrics.llmCost)),
-            embeddingCost: average(combinationData.map(r => r.metrics.embeddingCost)),
-            keywordMatchPercentage: average(combinationData.map(r => r.metrics.keywordMatchPercentage))
-          };
+  for (const searchStrategy of allSearchStrategies) {
+    for (const llmModel of allLLMModels) {
+      for (const embeddingModel of allEmbeddingModels) {
+        for (const contentType of allContentTypes) {
+          const combinationKey = `${searchStrategy}-${llmModel}-${embeddingModel}-${contentType}`;
+          const combinationData = successfulResults.filter(
+            r => (r.search_strategy || 'vector-search') === searchStrategy && 
+                 r.llm_model === llmModel && 
+                 r.embedding_model === embeddingModel && 
+                 r.content_type === contentType
+          );
           
-          combinationResults.push({
-            llmModel,
-            embeddingModel,
-            contentType,
-            combinationKey,
-            count: combinationData.length,
-            metrics: avgMetrics
-          });
+          if (combinationData.length > 0) {
+            const avgMetrics = {
+              totalTime: average(combinationData.map(r => r.metrics.totalTime)),
+              llmResponseTime: average(combinationData.map(r => r.metrics.llmResponseTime)),
+              vectorSearchTime: average(combinationData.map(r => r.metrics.vectorSearchTime)),
+              embeddingTime: average(combinationData.map(r => r.metrics.embeddingTime)),
+              totalCost: average(combinationData.map(r => r.metrics.totalCost)),
+              llmCost: average(combinationData.map(r => r.metrics.llmCost)),
+              embeddingCost: average(combinationData.map(r => r.metrics.embeddingCost)),
+              keywordMatchPercentage: average(combinationData.map(r => r.metrics.keywordMatchPercentage))
+            };
+            
+            combinationResults.push({
+              searchStrategy,
+              llmModel,
+              embeddingModel,
+              contentType,
+              combinationKey,
+              count: combinationData.length,
+              metrics: avgMetrics
+            });
+          }
         }
       }
     }
@@ -430,6 +446,7 @@ function generateHtmlReport(aggregatedData) {
           <div class="summary-cards">
             <div class="card">
               <h3>Best Overall Configuration</h3>
+              <p><strong>Strategy:</strong> ${bestOverallCombination.searchStrategy}</p>
               <p><strong>LLM:</strong> ${bestOverallCombination.llmModel}</p>
               <p><strong>Embedding:</strong> ${bestOverallCombination.embeddingModel}</p>
               <p><strong>Content Type:</strong> ${bestOverallCombination.contentType}</p>
@@ -441,6 +458,7 @@ function generateHtmlReport(aggregatedData) {
             
             <div class="card">
               <h3>Fastest Configuration</h3>
+              <p><strong>Strategy:</strong> ${fastestCombination.searchStrategy}</p>
               <p><strong>LLM:</strong> ${fastestCombination.llmModel}</p>
               <p><strong>Embedding:</strong> ${fastestCombination.embeddingModel}</p>
               <p><strong>Content Type:</strong> ${fastestCombination.contentType}</p>
@@ -451,6 +469,7 @@ function generateHtmlReport(aggregatedData) {
             
             <div class="card">
               <h3>Cheapest Configuration</h3>
+              <p><strong>Strategy:</strong> ${cheapestCombination.searchStrategy}</p>
               <p><strong>LLM:</strong> ${cheapestCombination.llmModel}</p>
               <p><strong>Embedding:</strong> ${cheapestCombination.embeddingModel}</p>
               <p><strong>Content Type:</strong> ${cheapestCombination.contentType}</p>
@@ -461,6 +480,7 @@ function generateHtmlReport(aggregatedData) {
             
             <div class="card">
               <h3>Most Accurate Configuration</h3>
+              <p><strong>Strategy:</strong> ${mostAccurateCombination.searchStrategy}</p>
               <p><strong>LLM:</strong> ${mostAccurateCombination.llmModel}</p>
               <p><strong>Embedding:</strong> ${mostAccurateCombination.embeddingModel}</p>
               <p><strong>Content Type:</strong> ${mostAccurateCombination.contentType}</p>
@@ -507,7 +527,7 @@ function generateHtmlReport(aggregatedData) {
                   const width = (c.scores.weightedScore * 100).toFixed(2);
                   return `
                     <div class="chart-bar" style="width: ${width}%">
-                      <span class="chart-label">${c.llmModel} + ${c.embeddingModel} + ${c.contentType}</span>
+                      <span class="chart-label">${c.searchStrategy} + ${c.llmModel} + ${c.embeddingModel} + ${c.contentType}</span>
                       <span class="chart-value">${width}%</span>
                     </div>
                   `;
@@ -572,6 +592,7 @@ function generateHtmlReport(aggregatedData) {
             
             <table>
               <tr>
+                <th>Search Strategy</th>
                 <th>LLM Model</th>
                 <th>Embedding Model</th>
                 <th>Content Type</th>
@@ -585,6 +606,7 @@ function generateHtmlReport(aggregatedData) {
                 .sort((a, b) => b.scores.weightedScore - a.scores.weightedScore)
                 .map(combination => `
                   <tr class="${combination.combinationKey === bestOverallCombination.combinationKey ? 'highlight' : ''}">
+                    <td>${combination.searchStrategy}</td>
                     <td>${combination.llmModel}</td>
                     <td>${combination.embeddingModel}</td>
                     <td>${combination.contentType}</td>
@@ -796,6 +818,7 @@ function generateHtmlReport(aggregatedData) {
               <tr>
                 <th>Run ID</th>
                 <th>Query</th>
+                <th>Response</th>
                 <th>Search Strategy</th>
                 <th>LLM Model</th>
                 <th>Embedding Model</th>
@@ -808,10 +831,32 @@ function generateHtmlReport(aggregatedData) {
               ${successfulResults
                 .sort((a, b) => a.query_text.localeCompare(b.query_text))
                 .map(result => {
+                  const response = result.response_text || '';
+                  const expectedKeywords = result.expected_keywords || [];
+                  const keywordsMatched = result.metrics.keywordsMatched || 0;
+                  
+                  // Highlight keywords in response
+                  let highlightedResponse = response;
+                  if (expectedKeywords.length > 0) {
+                    // Create a safe HTML version
+                    highlightedResponse = response.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                    
+                    // Highlight keywords
+                    expectedKeywords.forEach(keyword => {
+                      if (keyword) {
+                        const regex = new RegExp(keyword, 'gi');
+                        highlightedResponse = highlightedResponse.replace(regex, match => 
+                          '<span style="background-color: #e6ffe6; padding: 2px 4px; border-radius: 3px;">' + match + '</span>'
+                        );
+                      }
+                    });
+                  }
+                  
                   return `
                   <tr>
                     <td>${result.run_id}</td>
                     <td>${result.query_text}</td>
+                    <td style="max-width: 400px; overflow: auto; white-space: pre-wrap;">${highlightedResponse}</td>
                     <td>${result.search_strategy || 'vector-search'}</td>
                     <td>${result.llm_model}</td>
                     <td>${result.embedding_model}</td>
@@ -825,7 +870,7 @@ function generateHtmlReport(aggregatedData) {
                             : 'unknown'}</td>
                     <td>${result.metrics.totalTime.toFixed(2)}</td>
                     <td>${result.metrics.totalCost.toFixed(6)}</td>
-                    <td>${result.metrics.keywordMatchPercentage.toFixed(2)}</td>
+                    <td>${result.metrics.keywordMatchPercentage.toFixed(2)} ${keywordsMatched ? `(${keywordsMatched}/${expectedKeywords.length})` : ''}</td>
                   </tr>
                 `}).join('')}
             </table>
